@@ -1,0 +1,79 @@
+name: "RISC-V Linux"
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: write
+
+jobs:
+  riscv-linux:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: 设置 QEMU 模拟
+        uses: docker/setup-qemu-action@v3
+        with:
+          platforms: riscv64
+
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 检出仓库代码
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.release.tag_name }}
+          fetch-depth: 0
+
+      - name: 提取版本信息
+        id: meta
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: |
+          set -euo pipefail
+          VERSION="$(echo "$RELEASE_TAG" | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -n 1)"
+          if [ -z "$VERSION" ]; then
+            echo "❌ 无法从 tag 提取版本号: $RELEASE_TAG"
+            exit 1
+          fi
+          echo "tag=$RELEASE_TAG" >> "$GITHUB_OUTPUT"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "✅ 发布版本: $VERSION"
+
+      - name: 在 RISC-V 容器中安装依赖并构建 Tauri 应用
+        run: |
+          docker run --rm --privileged \
+            -v $PWD:/workspace -w /workspace \
+            riscv64/archlinux:latest \
+            bash -c "
+            set -euo pipefail
+
+            pacman-key --init
+            pacman-key --populate archlinux
+            pacman -Syu --noconfirm base-devel nodejs npm rustup \
+              webkit2gtk gtk3 libayatana-appindicator librsvg
+
+            npm install -g pnpm
+
+            rustup default nightly
+
+            pnpm install
+
+            pnpm tauri build
+
+            mkdir -p /workspace/artifacts
+            cp -r src-tauri/target/release/bundle/* /workspace/artifacts/ 2>/dev/null || true
+            "
+
+      - name: 上传构建产物
+        uses: actions/upload-artifact@v4
+        with:
+          name: tauri-riscv64-${{ steps.meta.outputs.version }}
+          path: artifacts/
+
+      - name: 上传到 Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: artifacts/**/*
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
