@@ -65,15 +65,18 @@ jobs:
             cp -r src-tauri/target/release/bundle/* /workspace/artifacts/ 2>/dev/null || true
             "
 
-      - name: 上传构建产物
+      - name: 上传构建产物（Artifact）
         uses: actions/upload-artifact@v4
         with:
-          name: tauri-loongarch64-${{ steps.meta.outputs.version }}
+          name: tauri-freebsd-${{ needs.validate-tag.outputs.version }}
           path: artifacts/
 
       - name: 上传到 Release
-        uses: softprops/action-gh-release@v1
+        uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ needs.validate-tag.outputs.tag }}
           files: artifacts/**/*
+          draft: true
+          prerelease: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
